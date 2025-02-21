@@ -1,3 +1,5 @@
+package protocol
+
 /*
 # Redis Protocol:
 # Spec:
@@ -15,7 +17,6 @@
 # 3. A whole message, followed by either 1 or 2.
 # We will need to remove parsed bytes from the stream.
 */
-package resp
 
 import (
 	"reflect"

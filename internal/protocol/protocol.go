@@ -1,15 +1,18 @@
-package resp
+package protocol
 
 import (
 	"bytes"
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 type DataType interface {
 	Size() int
 	BufferSize() int
+	String() string
+	Encode() []byte
 }
 
 type SimpleString struct {
@@ -40,8 +43,16 @@ func (s SimpleString) BufferSize() int {
 	return len(s.data) + 3
 }
 
-func (i IntegerValue) Size() int {
-	return i.value
+func (s SimpleString) String() string {
+	return fmt.Sprintf("SimpleString(%s)", s.data)
+}
+
+func (s SimpleString) Encode() []byte {
+	var buffer []byte
+	buffer = append(buffer, []byte("+")...)
+	buffer = append(buffer, []byte(s.data)...)
+	buffer = append(buffer, []byte("\r\n")...)
+	return buffer
 }
 
 func (b BulkString) Size() int {
@@ -53,8 +64,38 @@ func (b BulkString) BufferSize() int {
 	return 1 + sizeLength + 2 + len(b.data) + 2
 }
 
+func (b BulkString) String() string {
+	return fmt.Sprintf("BulkString(%s)", b.data)
+}
+
+func (b BulkString) Encode() []byte {
+	var buffer []byte
+	buffer = append(buffer, []byte("$")...)
+	buffer = append(buffer, []byte(strconv.Itoa(b.Size()))...)
+	buffer = append(buffer, []byte("\r\n")...)
+	buffer = append(buffer, []byte(b.data)...)
+	buffer = append(buffer, []byte("\r\n")...)
+	return buffer
+}
+
+func (i IntegerValue) Size() int {
+	return i.value
+}
+
 func (i IntegerValue) BufferSize() int {
 	return len(strconv.Itoa(i.value)) + 3
+}
+
+func (i IntegerValue) String() string {
+	return fmt.Sprintf("IntegerValue(strconv.Itoa(i.value)")
+}
+
+func (i IntegerValue) Encode() []byte {
+	var buffer []byte
+	buffer = append(buffer, []byte(":")...)
+	buffer = append(buffer, []byte(strconv.Itoa(i.value))...)
+	buffer = append(buffer, []byte("\r\n")...)
+	return buffer
 }
 
 func (s SimpleError) Size() int {
@@ -63,6 +104,18 @@ func (s SimpleError) Size() int {
 
 func (s SimpleError) BufferSize() int {
 	return len(s.msg) + 3
+}
+
+func (s SimpleError) String() string {
+	return fmt.Sprintf("SimpleError(%s)", s.msg)
+}
+
+func (s SimpleError) Encode() []byte {
+	var buffer []byte
+	buffer = append(buffer, []byte("-")...)
+	buffer = append(buffer, []byte(s.msg)...)
+	buffer = append(buffer, []byte("\r\n")...)
+	return buffer
 }
 
 func (a Array) Size() int {
@@ -78,8 +131,33 @@ func (a Array) BufferSize() int {
 	return 1 + sizeLength + 2 + elementsSize
 }
 
+func (a Array) String() string {
+	builder := new(strings.Builder)
+	builder.WriteString("Array[")
+	elements := []string{}
+	for _, val := range a.values {
+		elements = append(elements, val.String())
+	}
+	joinedElements := strings.Join(elements, ",")
+	builder.WriteString(joinedElements)
+	builder.WriteString("]")
+	return builder.String()
+}
+
+func (a Array) Encode() []byte {
+	buffer := []byte{}
+	buffer = append(buffer, []byte("*")...)
+	buffer = append(buffer, []byte(strconv.Itoa(a.Size()))...)
+	buffer = append(buffer, []byte("\r\n")...)
+	for _, val := range a.values {
+		buffer = append(buffer, val.Encode()...)
+	}
+	return buffer
+}
+
 func ParseFrame(buffer []byte) (DataType, error) {
 	lineBreakIndex := bytes.Index(buffer, []byte("\r\n"))
+	fmt.Println("linebreakeindex", lineBreakIndex)
 	if lineBreakIndex == -1 {
 		return nil, nil
 	}
@@ -87,6 +165,7 @@ func ParseFrame(buffer []byte) (DataType, error) {
 }
 
 func ParseElement(buffer []byte) (DataType, error) {
+	fmt.Println("parseelemente")
 	switch buffer[0] {
 	case '+':
 		return ParseSimpleString(buffer[1:])
@@ -104,7 +183,9 @@ func ParseElement(buffer []byte) (DataType, error) {
 }
 
 func ParseSimpleString(buffer []byte) (SimpleString, error) {
+	fmt.Println("simplestring")
 	lineBreakIndex := bytes.Index(buffer, []byte("\r\n"))
+	fmt.Println("incesxx", lineBreakIndex)
 	if lineBreakIndex == -1 {
 		return SimpleString{}, nil
 	}
