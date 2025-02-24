@@ -27,26 +27,26 @@ type testCase struct {
 	name     string
 	input    string
 	expected any
-	err      error
+	length   int
 }
 
 func TestPartial(t *testing.T) {
 	tcs := []testCase{
-		{"P1", "+O", nil, nil},
-		{"P2", "+OK\r", nil, nil},
-		{"P3", ":123", nil, nil},
-		{"P4", "-Invalid v", nil, nil},
-		{"P5", "*3\r\n$4\r\nGood\r\n$7\r\nMorni", Array{}, nil},
+		{"P1", "+O", nil, -1},
+		{"P2", "+OK\r", nil, -1},
+		{"P3", ":123", nil, -1},
+		{"P4", "-Invalid v", nil, -1},
+		{"P5", "*3\r\n$4\r\nGood\r\n$7\r\nMorni", Array{}, -1},
 	}
 
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
-			actual, err := ParseFrame([]byte(tc.input))
+			actual, length := ParseFrame([]byte(tc.input))
 			if !reflect.DeepEqual(actual, tc.expected) {
 				t.Fatalf("Unexpected return value. Expected: %v, Actual: %v", tc.expected, actual)
 			}
-			if err != tc.err {
-				t.Fatalf("Unexpected error value. Expected: %v, Actual: %v", tc.err, err)
+			if length != tc.length {
+				t.Fatalf("Shouldn't have read a full value. Expected: %d, actual: %d", tc.length, length)
 			}
 		})
 	}
@@ -54,27 +54,27 @@ func TestPartial(t *testing.T) {
 
 func TestFull(t *testing.T) {
 	tcs := []testCase{
-		{"P1", "+OK\r\n", SimpleString{"OK"}, nil},
-		{"P2", "-Error parsing\r\n", SimpleError{"Error parsing"}, nil},
-		{"P3", ":123\r\n", IntegerValue{123}, nil},
-		{"P4", "$4\r\nGood\r\n", BulkString{[]byte("Good")}, nil},
+		{"P1", "+OK\r\n", SimpleString{"OK"}, 5},
+		{"P2", "-Error parsing\r\n", SimpleError{"Error parsing"}, 16},
+		{"P3", ":123\r\n", IntegerValue{123}, 6},
+		{"P4", "$4\r\nGood\r\n", BulkString{[]byte("Good")}, 10},
 		{"P5", "*3\r\n$4\r\nGood\r\n$7\r\nMorning\r\n$5\r\nFolks\r\n", Array{
 			values: []DataType{
 				BulkString{[]byte("Good")},
 				BulkString{[]byte("Morning")},
 				BulkString{[]byte("Folks")},
 			},
-		}, nil},
+		}, 38},
 	}
 
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
-			actual, err := ParseFrame([]byte(tc.input))
+			actual, length := ParseFrame([]byte(tc.input))
 			if !reflect.DeepEqual(actual, tc.expected) {
 				t.Fatalf("Unexpected return value. Expected: %v, Actual: %v", tc.expected, actual)
 			}
-			if err != tc.err {
-				t.Fatalf("Unexpected error value. Expected: %v, Actual: %v", tc.err, err)
+			if length != tc.length {
+				t.Fatalf("Shouldn't have read a full value. Expected: %d, actual: %d", tc.length, length)
 			}
 		})
 	}
@@ -82,27 +82,27 @@ func TestFull(t *testing.T) {
 
 func TestFullThenPartial(t *testing.T) {
 	tcs := []testCase{
-		{"P1", "+OK\r\n$12\r\nSome", SimpleString{"OK"}, nil},
-		{"P2", "-Error parsing\r\n+Anothe", SimpleError{"Error parsing"}, nil},
-		{"P3", ":123\r\n*3\r\n$2\r\nDi\r\n", IntegerValue{123}, nil},
-		{"P4", "$4\r\nGood\r\n+Ano", BulkString{[]byte("Good")}, nil},
+		{"P1", "+OK\r\n$12\r\nSome", SimpleString{"OK"}, 5},
+		{"P2", "-Error parsing\r\n+Anothe", SimpleError{"Error parsing"}, 16},
+		{"P3", ":123\r\n*3\r\n$2\r\nDi\r\n", IntegerValue{123}, 6},
+		{"P4", "$4\r\nGood\r\n+Ano", BulkString{[]byte("Good")}, 10},
 		{"P5", "*3\r\n$4\r\nGood\r\n$7\r\nMorning\r\n$5\r\nFolks\r\n$5\r\nGett", Array{
 			values: []DataType{
 				BulkString{[]byte("Good")},
 				BulkString{[]byte("Morning")},
 				BulkString{[]byte("Folks")},
 			},
-		}, nil},
+		}, 38},
 	}
 
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
-			actual, err := ParseFrame([]byte(tc.input))
+			actual, length := ParseFrame([]byte(tc.input))
 			if !reflect.DeepEqual(actual, tc.expected) {
 				t.Fatalf("Unexpected return value. Expected: %v, Actual: %v", tc.expected, actual)
 			}
-			if err != tc.err {
-				t.Fatalf("Unexpected error value. Expected: %v, Actual: %v", tc.err, err)
+			if length != tc.length {
+				t.Fatalf("Shouldn't have read a full value. Expected: %d, actual: %d", tc.length, length)
 			}
 		})
 	}

@@ -9,8 +9,6 @@ import (
 )
 
 type DataType interface {
-	Size() int
-	BufferSize() int
 	String() string
 	Encode() []byte
 }
@@ -35,14 +33,6 @@ type Array struct {
 	values []DataType
 }
 
-func (s SimpleString) Size() int {
-	return len(s.data)
-}
-
-func (s SimpleString) BufferSize() int {
-	return len(s.data) + 3
-}
-
 func (s SimpleString) String() string {
 	return fmt.Sprintf("SimpleString(%s)", s.data)
 }
@@ -55,15 +45,6 @@ func (s SimpleString) Encode() []byte {
 	return buffer
 }
 
-func (b BulkString) Size() int {
-	return len(b.data)
-}
-
-func (b BulkString) BufferSize() int {
-	sizeLength := len(strconv.Itoa(len(b.data)))
-	return 1 + sizeLength + 2 + len(b.data) + 2
-}
-
 func (b BulkString) String() string {
 	return fmt.Sprintf("BulkString(%s)", b.data)
 }
@@ -71,23 +52,15 @@ func (b BulkString) String() string {
 func (b BulkString) Encode() []byte {
 	var buffer []byte
 	buffer = append(buffer, []byte("$")...)
-	buffer = append(buffer, []byte(strconv.Itoa(b.Size()))...)
+	buffer = append(buffer, []byte(strconv.Itoa(len(b.data)))...)
 	buffer = append(buffer, []byte("\r\n")...)
 	buffer = append(buffer, []byte(b.data)...)
 	buffer = append(buffer, []byte("\r\n")...)
 	return buffer
 }
 
-func (i IntegerValue) Size() int {
-	return i.value
-}
-
-func (i IntegerValue) BufferSize() int {
-	return len(strconv.Itoa(i.value)) + 3
-}
-
 func (i IntegerValue) String() string {
-	return fmt.Sprintf("IntegerValue(strconv.Itoa(i.value)")
+	return fmt.Sprintf("IntegerValue(%d)", i.value)
 }
 
 func (i IntegerValue) Encode() []byte {
@@ -96,14 +69,6 @@ func (i IntegerValue) Encode() []byte {
 	buffer = append(buffer, []byte(strconv.Itoa(i.value))...)
 	buffer = append(buffer, []byte("\r\n")...)
 	return buffer
-}
-
-func (s SimpleError) Size() int {
-	return len(s.msg)
-}
-
-func (s SimpleError) BufferSize() int {
-	return len(s.msg) + 3
 }
 
 func (s SimpleError) String() string {
@@ -116,19 +81,6 @@ func (s SimpleError) Encode() []byte {
 	buffer = append(buffer, []byte(s.msg)...)
 	buffer = append(buffer, []byte("\r\n")...)
 	return buffer
-}
-
-func (a Array) Size() int {
-	return len(a.values)
-}
-
-func (a Array) BufferSize() int {
-	elementsSize := 0
-	for _, element := range a.values {
-		elementsSize += element.BufferSize()
-	}
-	sizeLength := len(strconv.Itoa(a.Size()))
-	return 1 + sizeLength + 2 + elementsSize
 }
 
 func (a Array) String() string {
@@ -147,7 +99,7 @@ func (a Array) String() string {
 func (a Array) Encode() []byte {
 	buffer := []byte{}
 	buffer = append(buffer, []byte("*")...)
-	buffer = append(buffer, []byte(strconv.Itoa(a.Size()))...)
+	buffer = append(buffer, []byte(strconv.Itoa(len(a.values)))...)
 	buffer = append(buffer, []byte("\r\n")...)
 	for _, val := range a.values {
 		buffer = append(buffer, val.Encode()...)
@@ -155,17 +107,19 @@ func (a Array) Encode() []byte {
 	return buffer
 }
 
-func ParseFrame(buffer []byte) (DataType, error) {
+/* ParseFrame parses the buffer input. It it has a complete message, it returs the appropriate
+ * DataType implementation with the number of bytes read. If it doesn't have a complete
+ * input message, returns nil and -1
+ */
+func ParseFrame(buffer []byte) (DataType, int) {
 	lineBreakIndex := bytes.Index(buffer, []byte("\r\n"))
-	fmt.Println("linebreakeindex", lineBreakIndex)
 	if lineBreakIndex == -1 {
-		return nil, nil
+		return nil, -1
 	}
 	return ParseElement(buffer)
 }
 
-func ParseElement(buffer []byte) (DataType, error) {
-	fmt.Println("parseelemente")
+func ParseElement(buffer []byte) (DataType, int) {
 	switch buffer[0] {
 	case '+':
 		return ParseSimpleString(buffer[1:])
@@ -178,50 +132,48 @@ func ParseElement(buffer []byte) (DataType, error) {
 	case '*':
 		return ParseArray(buffer[1:])
 	default:
-		return nil, errors.New("invalid input type")
+		panic(errors.New("invalid input type"))
 	}
 }
 
-func ParseSimpleString(buffer []byte) (SimpleString, error) {
-	fmt.Println("simplestring")
+func ParseSimpleString(buffer []byte) (SimpleString, int) {
 	lineBreakIndex := bytes.Index(buffer, []byte("\r\n"))
-	fmt.Println("incesxx", lineBreakIndex)
 	if lineBreakIndex == -1 {
-		return SimpleString{}, nil
+		return SimpleString{}, -1
 	}
-	return SimpleString{string(buffer[0:lineBreakIndex])}, nil
+	return SimpleString{string(buffer[0:lineBreakIndex])}, 1 + lineBreakIndex + 2
 }
 
-func ParseSimpleError(buffer []byte) (SimpleError, error) {
+func ParseSimpleError(buffer []byte) (SimpleError, int) {
 	lineBreakIndex := bytes.Index(buffer, []byte("\r\n"))
 	if lineBreakIndex == -1 {
-		return SimpleError{}, nil
+		return SimpleError{}, -1
 	}
-	return SimpleError{string(buffer[0:lineBreakIndex])}, nil
+	return SimpleError{string(buffer[0:lineBreakIndex])}, 1 + lineBreakIndex + 2
 }
 
-func ParseInteger(buffer []byte) (IntegerValue, error) {
+func ParseInteger(buffer []byte) (IntegerValue, int) {
 	lineBreakIndex := bytes.Index(buffer, []byte("\r\n"))
 	if lineBreakIndex == -1 {
-		return IntegerValue{}, nil
+		return IntegerValue{}, -1
 	}
 	input := string(buffer[0:lineBreakIndex])
 	ival, err := strconv.Atoi(input)
 	if err != nil {
-		return IntegerValue{}, fmt.Errorf("error convering integer value: %s", input)
+		panic(fmt.Errorf("error reading integer %s: %w", input, err))
 	}
-	return IntegerValue{ival}, nil
+	return IntegerValue{ival}, 1 + lineBreakIndex + 2
 }
 
-func ParseBulkString(buffer []byte) (BulkString, error) {
+func ParseBulkString(buffer []byte) (BulkString, int) {
 	lineBreakIndex := bytes.Index(buffer, []byte("\r\n"))
 	if lineBreakIndex == -1 {
-		return BulkString{}, nil
+		return BulkString{}, -1
 	}
 	length := string(buffer[0:lineBreakIndex])
 	bulkStringLength, err := strconv.Atoi(length)
 	if err != nil {
-		return BulkString{}, fmt.Errorf("invalid bulk string length: %s", length)
+		panic(fmt.Errorf("invalid bulk string length %s: %w", length, err))
 	}
 	// To account for: the initial bulk string size, the CRLF after that and the CRLF after the bulkstring
 	// For example 5\r\nHello\r\n would have 5 delimiter characters: 1 + 2 + 2
@@ -229,36 +181,36 @@ func ParseBulkString(buffer []byte) (BulkString, error) {
 	if bulkStringLength > 0 && len(buffer) >= bulkStringLength+delimitersSize {
 		start := lineBreakIndex + 2
 		end := start + bulkStringLength
-		return BulkString{buffer[start:end]}, nil
+		return BulkString{buffer[start:end]}, 1 + bulkStringLength + delimitersSize
 	}
-	return BulkString{}, nil
+	return BulkString{}, -1
 }
 
-func ParseArray(buffer []byte) (Array, error) {
+func ParseArray(buffer []byte) (Array, int) {
 	lineBreakIndex := bytes.Index(buffer, []byte("\r\n"))
 	if lineBreakIndex == -1 {
-		return Array{}, nil
+		return Array{}, -1
 	}
 	input := string(buffer[0:lineBreakIndex])
 	elements, err := strconv.Atoi(input)
 	if err != nil {
-		return Array{}, fmt.Errorf("invalid array length: %s", input)
+		panic(fmt.Errorf("invalid array length: %s", input))
 	}
 
-	discardLength := lineBreakIndex + 2
+	bytesRead := lineBreakIndex + 2
 	var arrayValues []DataType
 
 	for i := 0; i < elements; i++ {
-		element, err := ParseElement(buffer[discardLength:])
-		if err != nil {
-			return Array{}, err
+		if len(buffer) <= bytesRead {
+			return Array{}, -1
 		}
-		if element.Size() == 0 {
-			return Array{}, err
+		element, byteSize := ParseElement(buffer[bytesRead:])
+		if byteSize < 0 {
+			return Array{}, -1
 		}
+		bytesRead += byteSize
 		arrayValues = append(arrayValues, element)
-		discardLength += element.BufferSize()
 	}
-	return Array{arrayValues}, nil
+	return Array{arrayValues}, 1 + bytesRead
 
 }

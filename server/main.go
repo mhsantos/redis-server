@@ -43,7 +43,6 @@ func handleConnection(conn net.Conn) {
 	// Read incoming data
 	inBuf := make([]byte, bufferSize)
 	protocolBuf := make([]byte, 0)
-	//outBuf := make([]byte, bufferSize)
 
 	for {
 		size, err := conn.Read(inBuf)
@@ -56,19 +55,14 @@ func handleConnection(conn net.Conn) {
 			fmt.Println(err)
 		}
 		protocolBuf = append(protocolBuf, inBuf[:size]...)
-		data, protocolErr := protocol.ParseFrame(protocolBuf)
+		data, dataSize := protocol.ParseFrame(protocolBuf)
 		fmt.Println("data", data)
 		fmt.Println("protocol", string(protocolBuf))
-		if protocolErr != nil {
-			_, err = conn.Write([]byte("error: " + protocolErr.Error()))
-			clear(inBuf)
-			continue
-		}
-		if data.Size() > 0 {
+		if dataSize > 0 {
 			// Processed a valid input
-			_, err = conn.Write([]byte("Received: " + data.String()))
+			_, err = conn.Write([]byte(fmt.Sprintf("Received: %s\n", data.String())))
 			clear(inBuf)
-			processedBufferSize := data.BufferSize()
+			processedBufferSize := dataSize
 			protocolBuf = protocolBuf[processedBufferSize:]
 			continue
 		}
