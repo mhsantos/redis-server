@@ -8,6 +8,10 @@ import (
 	"strings"
 )
 
+var (
+	store map[string]DataType = make(map[string]DataType)
+)
+
 type DataType interface {
 	String() string
 	Encode() []byte
@@ -34,7 +38,7 @@ type Array struct {
 }
 
 func (s SimpleString) String() string {
-	return fmt.Sprintf("SimpleString(%s)", s.data)
+	return s.data
 }
 
 func (s SimpleString) Encode() []byte {
@@ -46,7 +50,7 @@ func (s SimpleString) Encode() []byte {
 }
 
 func (b BulkString) String() string {
-	return fmt.Sprintf("BulkString(%s)", b.data)
+	return string(b.data)
 }
 
 func (b BulkString) Encode() []byte {
@@ -60,7 +64,7 @@ func (b BulkString) Encode() []byte {
 }
 
 func (i IntegerValue) String() string {
-	return fmt.Sprintf("IntegerValue(%d)", i.value)
+	return strconv.Itoa(i.value)
 }
 
 func (i IntegerValue) Encode() []byte {
@@ -72,7 +76,7 @@ func (i IntegerValue) Encode() []byte {
 }
 
 func (s SimpleError) String() string {
-	return fmt.Sprintf("SimpleError(%s)", s.msg)
+	return s.msg
 }
 
 func (s SimpleError) Encode() []byte {
@@ -212,5 +216,69 @@ func ParseArray(buffer []byte) (Array, int) {
 		arrayValues = append(arrayValues, element)
 	}
 	return Array{arrayValues}, 1 + bytesRead
+}
 
+// ParseCommand parses byte slice buffer input and calls the ParseFrame function to
+// determine if it received a full command. If it did it will process the command returning
+// a SimpleError object if the command is invalid. It always returns the number of processed
+// bytes or -1 if the buffer input doesn't contain a full command.
+func ParseCommand(buffer []byte) (DataType, int) {
+	data, size := ParseFrame(buffer)
+	if size == -1 {
+		return data, -1
+	}
+	switch data.(type) {
+	case Array:
+		if len(data.(Array).values) < 1 {
+			return SimpleError{fmt.Sprintf("command not informed")}, size
+		}
+		switch data.(Array).values[0].(type) {
+		case BulkString:
+			return data.(Array), size
+		default:
+			return SimpleError{fmt.Sprintf("invalid command of type %T. Commands must be of BulkString type", data)}, size
+		}
+	default:
+		return SimpleError{fmt.Sprintf("invalid input of type %T. Expected an Array", data)}, size
+	}
+}
+
+func processCommand(data Array) DataType {
+	command := data.values[0]
+	switch strings.ToLower(command.String()) {
+	case "get":
+		return processGet(data)
+	case "set":
+		return processSet(data)
+	default:
+		return SimpleError{fmt.Sprintf("invalid command %s", command.String())}
+	}
+}
+
+func processGet(data Array) DataType {
+	if len(data.values) != 2 {
+		return SimpleError{fmt.Sprintf("the GET command accepts 2 parameters: GET and KEY. Received %d parameters instead", len(data.values))}
+	}
+	key, ok := data.values[1].(BulkString)
+	if !ok {
+		return SimpleError{fmt.Sprintf("the KEY parameter for the GET command must be a BulkString. Received a %T instead", data.values[1])}
+
+	}
+	val, ok := store[key.String()]
+	if !ok {
+		return SimpleString{"not found"}
+	}
+	return val
+}
+
+func processSet(data Array) DataType {
+	if len(data.values) != 3 {
+		return SimpleError{fmt.Sprintf("the SET command accepts 3 parameters: SET, KEY and VALUE. Received %d parameters instead", len(data.values))}
+	}
+	key, ok := data.values[1].(BulkString)
+	if !ok {
+		return SimpleError{fmt.Sprintf("the KEY parameter for the SET command must be a BulkString. Received a %T instead", data.values[1])}
+	}
+	store[string(key.data)] = data.values[2]
+	return SimpleString{"OK"}
 }

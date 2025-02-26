@@ -30,6 +30,13 @@ type testCase struct {
 	length   int
 }
 
+type commandTestCase struct {
+	name     string
+	input    string
+	expected any
+	length   int
+}
+
 func TestPartial(t *testing.T) {
 	tcs := []testCase{
 		{"P1", "+O", nil, -1},
@@ -99,10 +106,28 @@ func TestFullThenPartial(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			actual, length := ParseFrame([]byte(tc.input))
 			if !reflect.DeepEqual(actual, tc.expected) {
-				t.Fatalf("Unexpected return value. Expected: %v, Actual: %v", tc.expected, actual)
+				t.Fatalf("unexpected return value. Expected: %v, Actual: %v", tc.expected, actual)
 			}
 			if length != tc.length {
 				t.Fatalf("Shouldn't have read a full value. Expected: %d, actual: %d", tc.length, length)
+			}
+		})
+	}
+}
+
+func TestCommandParsing(t *testing.T) {
+	ctc := []commandTestCase{
+		{"Invalid GET command", "*3\r\n$3\r\nbuy\r\n$3\r\nkey\r\n$3\r\nval\r\n", SimpleError{"invalid command buy"}, 31},
+		{"Invalid GET arguments", "*3\r\n$3\r\nGET\r\n$3\r\nkey\r\n$4\r\nabcd\r\n", SimpleError{"the GET command accepts 2 parameters: GET and KEY. Received 3 parameters instead"}, 32},
+	}
+	for _, tc := range ctc {
+		t.Run(tc.name, func(t *testing.T) {
+			actual, length := ParseCommand([]byte(tc.input))
+			if actual != tc.expected {
+				t.Fatalf("unexpected return value. Expected: %v, Actual: %v", tc.expected, actual)
+			}
+			if length != tc.length {
+				t.Fatalf("incorrect number of bytes read. Expected %d, actual %d", tc.length, length)
 			}
 		})
 	}

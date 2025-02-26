@@ -22,6 +22,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Start the task processor
+	go protocol.Start()
+
 	// Accept incoming connections and handle them
 	for {
 		conn, err := listener.Accept()
@@ -29,11 +32,12 @@ func main() {
 			fmt.Println(err)
 			os.Exit(1)
 		}
-		fmt.Println("Accepting connection from %s\n", conn.RemoteAddr())
+		fmt.Printf("Accepting connection from %s\n", conn.RemoteAddr())
 
 		// Handle the connection in a new goroutine
 		go handleConnection(conn)
 	}
+
 }
 
 func handleConnection(conn net.Conn) {
@@ -43,10 +47,10 @@ func handleConnection(conn net.Conn) {
 	// Read incoming data
 	inBuf := make([]byte, bufferSize)
 	protocolBuf := make([]byte, 0)
+	responseQueue := make(chan protocol.DataType)
 
 	for {
 		size, err := conn.Read(inBuf)
-		fmt.Println("Bytes received", size)
 		if err != nil {
 			if err != io.EOF {
 				fmt.Println("Client disconnected")
@@ -55,12 +59,22 @@ func handleConnection(conn net.Conn) {
 			fmt.Println(err)
 		}
 		protocolBuf = append(protocolBuf, inBuf[:size]...)
-		data, dataSize := protocol.ParseFrame(protocolBuf)
-		fmt.Println("data", data)
-		fmt.Println("protocol", string(protocolBuf))
+		data, dataSize := protocol.ParseCommand(protocolBuf)
 		if dataSize > 0 {
-			// Processed a valid input
-			_, err = conn.Write([]byte(fmt.Sprintf("Received: %s\n", data.String())))
+			// Processed a full frame
+			switch data.(type) {
+			case protocol.SimpleError:
+				_, err = conn.Write([]byte(data.Encode()))
+				clear(inBuf)
+			case protocol.Array:
+				task := protocol.Task{
+					Command:         data.(protocol.Array),
+					ResponseChannel: responseQueue,
+				}
+				protocol.AppendTask(task)
+			}
+			response := <-responseQueue
+			_, err = conn.Write([]byte(response.Encode()))
 			clear(inBuf)
 			processedBufferSize := dataSize
 			protocolBuf = protocolBuf[processedBufferSize:]
