@@ -1,5 +1,3 @@
-package protocol
-
 /*
 # Redis Protocol:
 # Spec:
@@ -18,19 +16,14 @@ package protocol
 # We will need to remove parsed bytes from the stream.
 */
 
+package protocol
+
 import (
 	"reflect"
 	"testing"
 )
 
 type testCase struct {
-	name     string
-	input    string
-	expected any
-	length   int
-}
-
-type commandTestCase struct {
 	name     string
 	input    string
 	expected any
@@ -62,11 +55,11 @@ func TestPartial(t *testing.T) {
 func TestFull(t *testing.T) {
 	tcs := []testCase{
 		{"P1", "+OK\r\n", SimpleString{"OK"}, 5},
-		{"P2", "-Error parsing\r\n", SimpleError{"Error parsing"}, 16},
-		{"P3", ":123\r\n", IntegerValue{123}, 6},
+		{"P2", "-Error parsing\r\n", Error{"Error parsing"}, 16},
+		{"P3", ":123\r\n", Integer{123}, 6},
 		{"P4", "$4\r\nGood\r\n", BulkString{[]byte("Good")}, 10},
 		{"P5", "*3\r\n$4\r\nGood\r\n$7\r\nMorning\r\n$5\r\nFolks\r\n", Array{
-			values: []DataType{
+			elements: []DataType{
 				BulkString{[]byte("Good")},
 				BulkString{[]byte("Morning")},
 				BulkString{[]byte("Folks")},
@@ -90,11 +83,11 @@ func TestFull(t *testing.T) {
 func TestFullThenPartial(t *testing.T) {
 	tcs := []testCase{
 		{"P1", "+OK\r\n$12\r\nSome", SimpleString{"OK"}, 5},
-		{"P2", "-Error parsing\r\n+Anothe", SimpleError{"Error parsing"}, 16},
-		{"P3", ":123\r\n*3\r\n$2\r\nDi\r\n", IntegerValue{123}, 6},
+		{"P2", "-Error parsing\r\n+Anothe", Error{"Error parsing"}, 16},
+		{"P3", ":123\r\n*3\r\n$2\r\nDi\r\n", Integer{123}, 6},
 		{"P4", "$4\r\nGood\r\n+Ano", BulkString{[]byte("Good")}, 10},
 		{"P5", "*3\r\n$4\r\nGood\r\n$7\r\nMorning\r\n$5\r\nFolks\r\n$5\r\nGett", Array{
-			values: []DataType{
+			elements: []DataType{
 				BulkString{[]byte("Good")},
 				BulkString{[]byte("Morning")},
 				BulkString{[]byte("Folks")},
@@ -110,24 +103,6 @@ func TestFullThenPartial(t *testing.T) {
 			}
 			if length != tc.length {
 				t.Fatalf("Shouldn't have read a full value. Expected: %d, actual: %d", tc.length, length)
-			}
-		})
-	}
-}
-
-func TestCommandParsing(t *testing.T) {
-	ctc := []commandTestCase{
-		{"Invalid GET command", "*3\r\n$3\r\nbuy\r\n$3\r\nkey\r\n$3\r\nval\r\n", SimpleError{"invalid command buy"}, 31},
-		{"Invalid GET arguments", "*3\r\n$3\r\nGET\r\n$3\r\nkey\r\n$4\r\nabcd\r\n", SimpleError{"the GET command accepts 2 parameters: GET and KEY. Received 3 parameters instead"}, 32},
-	}
-	for _, tc := range ctc {
-		t.Run(tc.name, func(t *testing.T) {
-			actual, length := ParseCommand([]byte(tc.input))
-			if actual != tc.expected {
-				t.Fatalf("unexpected return value. Expected: %v, Actual: %v", tc.expected, actual)
-			}
-			if length != tc.length {
-				t.Fatalf("incorrect number of bytes read. Expected %d, actual %d", tc.length, length)
 			}
 		})
 	}

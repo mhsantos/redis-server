@@ -6,7 +6,9 @@ import (
 	"net"
 	"os"
 
+	"github.com/mhsantos/redis-server/internal/command"
 	"github.com/mhsantos/redis-server/internal/protocol"
+	"github.com/mhsantos/redis-server/internal/taskmanager"
 )
 
 const (
@@ -23,7 +25,7 @@ func main() {
 	}
 
 	// Start the task processor
-	go protocol.Start()
+	go taskmanager.Start()
 
 	// Accept incoming connections and handle them
 	for {
@@ -41,8 +43,12 @@ func main() {
 }
 
 func handleConnection(conn net.Conn) {
-	// Close the connection when we're done
-	defer conn.Close()
+	defer func() {
+		r := recover()
+		fmt.Printf("error parsing input %s. closing the connection\n", r.(error))
+		// Close the connection when we're done
+		conn.Close()
+	}()
 
 	// Read incoming data
 	inBuf := make([]byte, bufferSize)
@@ -52,36 +58,36 @@ func handleConnection(conn net.Conn) {
 	for {
 		size, err := conn.Read(inBuf)
 		if err != nil {
-			if err != io.EOF {
+			if err == io.EOF {
 				fmt.Println("Client disconnected")
 				return
+			} else {
+				fmt.Println(err)
 			}
-			fmt.Println(err)
 		}
 		protocolBuf = append(protocolBuf, inBuf[:size]...)
-		data, dataSize := protocol.ParseCommand(protocolBuf)
+		data, dataSize := command.ParseCommand(protocolBuf)
 		if dataSize > 0 {
 			// Processed a full frame
-			switch data.(type) {
-			case protocol.SimpleError:
-				_, err = conn.Write([]byte(data.Encode()))
+			switch data := data.(type) {
+			case protocol.Error:
+				conn.Write([]byte(data.Encode()))
 				clear(inBuf)
 			case protocol.Array:
-				task := protocol.Task{
-					Command:         data.(protocol.Array),
+				task := taskmanager.Task{
+					Command:         data,
 					ResponseChannel: responseQueue,
 				}
-				protocol.AppendTask(task)
+				taskmanager.AppendTask(task)
 			}
 			response := <-responseQueue
-			_, err = conn.Write([]byte(response.Encode()))
+			conn.Write([]byte(response.Encode()))
 			clear(inBuf)
 			processedBufferSize := dataSize
 			protocolBuf = protocolBuf[processedBufferSize:]
 			continue
 		}
 		clear(inBuf)
-
 	}
 
 }
