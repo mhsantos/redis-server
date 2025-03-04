@@ -1,7 +1,7 @@
 package taskmanager
 
 import (
-	"github.com/mhsantos/redis-server/internal/command"
+	"github.com/mhsantos/redis-server/internal/commands"
 	"github.com/mhsantos/redis-server/internal/protocol"
 )
 
@@ -24,7 +24,7 @@ func AppendTask(task Task) {
 func Start() {
 	tasks = make(chan Task, taskQueueSize)
 	for task := range tasks {
-		response := command.ProcessCommand(task.Command)
+		response := commands.ProcessCommand(task.Command)
 		task.ResponseChannel <- response
 	}
 }

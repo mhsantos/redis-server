@@ -6,7 +6,7 @@ import (
 	"net"
 	"os"
 
-	"github.com/mhsantos/redis-server/internal/command"
+	"github.com/mhsantos/redis-server/internal/commands"
 	"github.com/mhsantos/redis-server/internal/protocol"
 	"github.com/mhsantos/redis-server/internal/taskmanager"
 )
@@ -44,9 +44,10 @@ func main() {
 
 func handleConnection(conn net.Conn) {
 	defer func() {
-		r := recover()
-		fmt.Printf("error parsing input %s. closing the connection\n", r.(error))
-		// Close the connection when we're done
+		if r := recover(); r != nil {
+			fmt.Printf("error parsing input closing the connection %s\n", r.(error))
+			// Close the connection when we're done
+		}
 		conn.Close()
 	}()
 
@@ -61,12 +62,10 @@ func handleConnection(conn net.Conn) {
 			if err == io.EOF {
 				fmt.Println("Client disconnected")
 				return
-			} else {
-				fmt.Println(err)
 			}
 		}
 		protocolBuf = append(protocolBuf, inBuf[:size]...)
-		data, dataSize := command.ParseCommand(protocolBuf)
+		data, dataSize := commands.ParseCommand(protocolBuf)
 		if dataSize > 0 {
 			// Processed a full frame
 			switch data := data.(type) {

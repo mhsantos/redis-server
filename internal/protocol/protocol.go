@@ -111,6 +111,10 @@ func (a Array) GetElements() []DataType {
 	return a.elements
 }
 
+func NewBulkString(value []byte) BulkString {
+	return BulkString{value}
+}
+
 func NewSimpleString(value string) SimpleString {
 	return SimpleString{value}
 }
@@ -121,6 +125,10 @@ func NewError(msg string) Error {
 
 func NewInteger(value int) Integer {
 	return Integer{value}
+}
+
+func NewArray(elements ...DataType) Array {
+	return Array{elements}
 }
 
 /* ParseFrame parses the buffer input. It it has a complete message, it returs the appropriate

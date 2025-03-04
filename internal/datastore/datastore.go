@@ -34,8 +34,12 @@ func Set(key string, value protocol.DataType) {
 	store[key] = val
 }
 
-func Delete(key string) {
-	delete(store, key)
+func Delete(key string) bool {
+	if _, ok := Get(key); ok {
+		delete(store, key)
+		return true
+	}
+	return false
 }
 
 func SetWithExpire(key string, value protocol.DataType, expire int64) {
