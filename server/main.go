@@ -65,7 +65,14 @@ func handleConnection(conn net.Conn) {
 			}
 		}
 		protocolBuf = append(protocolBuf, inBuf[:size]...)
-		data, dataSize := commands.ParseCommand(protocolBuf)
+		validRead, err := commands.ParseCommand(protocolBuf)
+		if err != nil {
+			clear(inBuf)
+			protocolBuf = make([]byte, 0)
+			conn.Write([]byte(protocol.NewError(err.Error()).Encode()))
+			continue
+		}
+		data, dataSize := validRead.Unwrap()
 		if dataSize > 0 {
 			// Processed a full frame
 			switch data := data.(type) {

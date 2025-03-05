@@ -27,25 +27,29 @@ func init() {
 // determine if it received a full command. If it did it will process the command returning
 // a Error object if the command is invalid. It always returns the number of processed
 // bytes or -1 if the buffer input doesn't contain a full command.
-func ParseCommand(buffer []byte) (protocol.DataType, int) {
-	data, size := protocol.ParseFrame(buffer)
+func ParseCommand(buffer []byte) (protocol.ValidRead, error) {
+	validRead, err := protocol.ParseFrame(buffer)
+	if err != nil {
+		return validRead, err
+	}
+	data, size := validRead.Unwrap()
 	if size == -1 {
-		return data, -1
+		return protocol.ValidRead{data, -1}, nil
 	}
 	switch data.(type) {
 	case protocol.Array:
 		elements := data.(protocol.Array).GetElements()
 		if len(elements) < 1 {
-			return protocol.NewError("command not informed"), size
+			return protocol.ValidRead{protocol.NewError("command not informed"), size}, nil
 		}
 		switch elements[0].(type) {
 		case protocol.BulkString:
-			return data.(protocol.Array), size
+			return protocol.ValidRead{data.(protocol.Array), size}, nil
 		default:
-			return protocol.NewError(fmt.Sprintf("invalid command of type %T. Commands must be of BulkString type", data)), size
+			return protocol.ValidRead{protocol.NewError(fmt.Sprintf("invalid command of type %T. Commands must be of BulkString type", data)), size}, nil
 		}
 	default:
-		return protocol.NewError(fmt.Sprintf("invalid input of type %T. Expected an Array", data)), size
+		return protocol.ValidRead{protocol.NewError(fmt.Sprintf("invalid input of type %T. Expected an Array", data)), size}, nil
 	}
 }
 
